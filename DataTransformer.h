@@ -106,13 +106,13 @@ private:
   void TransformMetaJoints(MetaData& meta);
   void TransformJoints(Joints& joints);
   bool OnPlane(Point p, Size img_size);
-  bool AugmentationFlip(Mat& img, Mat& img_aug, Mat& mask_miss, MetaData& meta);
-  float AugmentationRotate(Mat& img_src, Mat& img_aug, Mat& mask_miss, MetaData& meta);
-  float AugmentationScale(Mat& img, Mat& img_temp, Mat& mask_miss, MetaData& meta);
-  Size AugmentationCroppad(Mat& img_temp, Mat& img_aug, Mat& mask_miss, Mat& mask_all_aug, MetaData& meta);
+  bool AugmentationFlip(Mat& img, Mat& img_aug, Mat& mask_miss, MetaData& meta, bool unrandom=false);
+  float AugmentationRotate(Mat& img_src, Mat& img_aug, Mat& mask_miss, MetaData& meta, bool unrandom=false);
+  float AugmentationScale(Mat& img, Mat& img_temp, Mat& mask_miss, MetaData& meta, bool unrandom=false);
+  Size AugmentationCroppad(Mat& img_temp, Mat& img_aug, Mat& mask_miss, Mat& mask_all_aug, MetaData& meta, bool unrandom=false);
   void GenerateLabelMap(double*, Mat&, MetaData meta);
   void PutGaussianMaps(double* entry, Point2f center, int stride, int grid_x, int grid_y, float sigma);
-  void PutVecMaps(double* entryX, double* entryY, Mat& count, Point2f centerA, Point2f centerB, int stride, int grid_x, int grid_y, float sigma, int thre);
+  void PutVecMaps(double* entryX, double* entryY, Mat& count, Point2f centerA, Point2f centerB, int stride, int grid_x, int grid_y, float sigma, int thre, bool debug=false);
   void Clahe(Mat& img, int, int);
   void ReadMetaData(MetaData& meta, const uchar *data, size_t offset3, size_t offset1);
   void SwapLeftRight(Joints& j);

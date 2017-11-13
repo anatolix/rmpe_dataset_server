@@ -1,3 +1,10 @@
+# BROKEN
+
+This fork of server is intentionally **broken.** 
+Each picture augmented in same way, order of pictures always same
+Used for regression testing of py_rmpe_server.py
+Do not use for training 
+
 # RMPE Dataset Server
 
 This server generates augmented samples for the project [keras_Realtime_Multi-Person_Pose_Estimation](https://github.com/michalfaber/keras_Realtime_Multi-Person_Pose_Estimation)

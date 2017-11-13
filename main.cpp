@@ -44,6 +44,8 @@ int getDatum(const string key, const H5::Group *group, DatumMetadata &meta) {
   return 0;
 }
 
+int sent=0;
+
 int sendTransformed(
     uchar *transformed_data, double *transformed_label,
     const int rows_data, const int cols_data,
@@ -52,6 +54,8 @@ int sendTransformed(
     const int np,
     const int start_label_data,
     zmq::socket_t *s, int stop) {
+
+   stop = sent>1;
 
   if (stop==1) {
     string headers = "{\"stop\":true}";
@@ -65,13 +69,25 @@ int sendTransformed(
     Eigen::MatrixXd weights = Eigen::Map<Eigen::MatrixXd>(
         transformed_label, rows_label * np, cols_label);
 
+    if (sent==1)
+        std::cout << "WEIGHTS:" << weights << std::endl << std::endl << std::endl;
+
     Eigen::MatrixXd vec = Eigen::Map<Eigen::MatrixXd>(
         transformed_label + start_label_data, rows_label * np, cols_label);
 
+    if (sent==1)
+        std::cout << "VEC:" << weights << std::endl << std::endl << std::endl;
+
     Eigen::MatrixXd label = vec.cwiseProduct(weights);
+
+    if (sent==1)
+        std::cout << "LABEL:" << weights << std::endl << std::endl << std::endl;
 
     Eigen::MatrixXd mask = Eigen::Map<Eigen::MatrixXd>(
         transformed_label, rows_label, cols_label);
+
+    if (sent==1)
+        std::cout << "MASK:" << weights << std::endl << std::endl << std::endl;
 
     const int lbl_rows(rows_label);
     const int lbl_cols(cols_label);
@@ -103,6 +119,8 @@ int sendTransformed(
     size_t label_size(lbl_rows * lbl_cols * sizeof(double) * np);
     zmq::message_t lbl_buff (label.data(), label_size);
     s->send(lbl_buff);
+
+    sent++;
   }
 
   return 0;
@@ -123,7 +141,7 @@ int main(int argc, char* argv[]) {
 
   zmq::context_t ctx (1);
   zmq::socket_t s (ctx, ZMQ_PUSH);
-  s.setsockopt(ZMQ_SNDHWM, 160);
+  s.setsockopt(ZMQ_SNDHWM, 1);
   string bind_addr = "tcp://*:";
   bind_addr.append(port);
   int rc = zmq_bind (s, bind_addr.c_str());
@@ -184,7 +202,7 @@ int main(int argc, char* argv[]) {
 
     cout << "Epoch " << ++epoch_cnt << endl;
 
-    std::random_shuffle(std::begin(keys), std::end(keys));
+    // std::random_shuffle(std::begin(keys), std::end(keys));
 
     // transform samples in current epoch
     for (int i = 0; i < keys.size(); i++) {
