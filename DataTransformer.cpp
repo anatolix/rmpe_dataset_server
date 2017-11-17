@@ -1,4 +1,5 @@
 #include <fstream>
+#include <iostream>
 #include "DataTransformer.h"
 
 unsigned int caffe_rng_rand() {
@@ -119,7 +120,7 @@ void DataTransformer::TransformJoints(Joints& j) {
   j = jo;
 }
 
-bool DataTransformer::AugmentationFlip(Mat& img_src, Mat& img_aug, Mat& mask_miss, MetaData& meta) {
+bool DataTransformer::AugmentationFlip(Mat& img_src, Mat& img_aug, Mat& mask_miss, MetaData& meta, bool unrandom) {
   bool doflip;
 
   if (param_.aug_way == "rand") {
@@ -130,6 +131,10 @@ bool DataTransformer::AugmentationFlip(Mat& img_src, Mat& img_aug, Mat& mask_mis
     doflip = (aug_flips_[meta.write_number][meta.epoch % param_.num_total_augs] == 1);
   }
   else {
+    doflip = 0;
+  }
+
+  if (unrandom) {
     doflip = 0;
   }
 
@@ -161,7 +166,7 @@ bool DataTransformer::AugmentationFlip(Mat& img_src, Mat& img_aug, Mat& mask_mis
   return doflip;
 }
 
-float DataTransformer::AugmentationRotate(Mat& img_src, Mat& img_dst, Mat& mask_miss, MetaData& meta) {
+float DataTransformer::AugmentationRotate(Mat& img_src, Mat& img_dst, Mat& mask_miss, MetaData& meta, bool unrandom) {
   float degree;
 
   if(param_.aug_way == "rand"){
@@ -172,6 +177,10 @@ float DataTransformer::AugmentationRotate(Mat& img_src, Mat& img_dst, Mat& mask_
     degree = aug_degs_[meta.write_number][meta.epoch % param_.num_total_augs];
   }
   else {
+    degree = 0;
+  }
+
+  if (unrandom) {
     degree = 0;
   }
 
@@ -199,10 +208,11 @@ float DataTransformer::AugmentationRotate(Mat& img_src, Mat& img_dst, Mat& mask_
   return degree;
 }
 
-float DataTransformer::AugmentationScale(Mat& img_src, Mat& img_temp, Mat& mask_miss, MetaData& meta) {
+float DataTransformer::AugmentationScale(Mat& img_src, Mat& img_temp, Mat& mask_miss, MetaData& meta, bool unrandom) {
   float dice = Rand(RAND_MAX) / static_cast <float> (RAND_MAX);
   float scale_multiplier;
 
+  //TODO: тоже очень странное место. Сейчас по факту получается что scale выключен
   if(dice > param_.scale_prob) {
     img_temp = img_src.clone();
     scale_multiplier = 1;
@@ -213,6 +223,10 @@ float DataTransformer::AugmentationScale(Mat& img_src, Mat& img_temp, Mat& mask_
   }
   float scale_abs = param_.target_dist/meta.scale_self;
   float scale = scale_abs * scale_multiplier;
+
+  if (unrandom) {
+    scale = scale_abs;
+  }
 
   resize(img_src, img_temp, Size(), scale, scale, INTER_CUBIC);
   resize(mask_miss, mask_miss, Size(), scale, scale, INTER_CUBIC);
@@ -231,7 +245,7 @@ float DataTransformer::AugmentationScale(Mat& img_src, Mat& img_temp, Mat& mask_
   return scale_multiplier;
 }
 
-Size DataTransformer::AugmentationCroppad(Mat& img_src, Mat& img_dst, Mat& mask_miss, Mat& mask_miss_aug, MetaData& meta) {
+Size DataTransformer::AugmentationCroppad(Mat& img_src, Mat& img_dst, Mat& mask_miss, Mat& mask_miss_aug, MetaData& meta, bool unrandom) {
   float dice_x = Rand(RAND_MAX) / static_cast <float> (RAND_MAX);
   float dice_y = Rand(RAND_MAX) / static_cast <float> (RAND_MAX);
 
@@ -240,6 +254,12 @@ Size DataTransformer::AugmentationCroppad(Mat& img_src, Mat& img_dst, Mat& mask_
 
   float x_offset = int((dice_x - 0.5) * 2 * param_.center_perterb_max);
   float y_offset = int((dice_y - 0.5) * 2 * param_.center_perterb_max);
+
+  if (unrandom) {
+    x_offset=0;
+    y_offset=0;
+  }
+
 
   Point2i center = meta.objpos + Point2f(x_offset, y_offset);
   int offset_left = -(center.x - (crop_x/2));
@@ -294,9 +314,11 @@ void DataTransformer::PutGaussianMaps(double* entry, Point2f center, int stride,
   }
 }
 
-void DataTransformer::PutVecMaps(double* entryX, double* entryY, Mat& count, Point2f centerA, Point2f centerB, int stride, int grid_x, int grid_y, float sigma, int thre){
+void DataTransformer::PutVecMaps(double* entryX, double* entryY, Mat& count, Point2f centerA, Point2f centerB, int stride, int grid_x, int grid_y, float sigma, int thre, bool debug){
   centerB = centerB*0.125;
   centerA = centerA*0.125;
+
+  // bc это вектор A->B, почему блин такое название
   Point2f bc = centerB - centerA;
   int min_x = std::max( int(round(std::min(centerA.x, centerB.x)-thre)), 0);
   int max_x = std::min( int(round(std::max(centerA.x, centerB.x)+thre)), grid_x);
@@ -304,30 +326,69 @@ void DataTransformer::PutVecMaps(double* entryX, double* entryY, Mat& count, Poi
   int min_y = std::max( int(round(std::min(centerA.y, centerB.y)-thre)), 0);
   int max_y = std::min( int(round(std::max(centerA.y, centerB.y)+thre)), grid_y);
 
+  // min/max/x/y - теперь квадрат в котором вообще надо смотреть.
+
   float norm_bc = sqrt(bc.x*bc.x + bc.y*bc.y);
+  // bc это длина вектора AB, почему блин такое название
+
   bc.x = bc.x /norm_bc;
   bc.y = bc.y /norm_bc;
+  // сделали bc единичной длины
+
+  if (debug) {
+    // std::cout << min_x << " " << min_y << " -> " << max_x << " " << max_y << std::endl;
+    // std::cout << "norm: " << norm_bc << std::endl;
+    // std::cout << "normed: " << bc.x << " " <<  bc.y << std::endl;
+  }
+
 
   for (int g_y = min_y; g_y < max_y; g_y++) {
     for (int g_x = min_x; g_x < max_x; g_x++) {
       Point2f ba;
       ba.x = g_x - centerA.x;
       ba.y = g_y - centerA.y;
-      float dist = std::abs(ba.x*bc.y -ba.y*bc.x);
+      //Это вектор от нашей точки A в B (которое называется center А, wtf)
+
+      float dist = std::abs(ba.x*bc.y-ba.y*bc.x);
+      //это проекция на наш единичный вектор,
 
       if (dist <= thre) {
         int cnt = count.at<uchar>(g_y, g_x);
         if (cnt == 0) {
           entryX[g_y*grid_x + g_x] = bc.x;
           entryY[g_y*grid_x + g_x] = bc.y;
+          if (debug) {
+            // std::cout << "empty: " << g_x << " " << g_y << "[" << bc.x << "," << bc.y << "]" << std::endl;
+          }
+
         } else {
           // averaging when limbs of multiple persons overlap
           entryX[g_y*grid_x + g_x] = (entryX[g_y*grid_x + g_x]*cnt + bc.x) / (cnt + 1);
           entryY[g_y*grid_x + g_x] = (entryY[g_y*grid_x + g_x]*cnt + bc.y) / (cnt + 1);
           count.at<uchar>(g_y, g_x) = cnt + 1;
+          if (debug) {
+             // std::cout << "nonempty: " << g_x << " " << g_y << "[" << entryX[g_y*grid_x + g_x] << "," << entryY[g_y*grid_x + g_x] << "]" << std::endl;
+          }
         }
       }
     }
+  }
+
+  if (debug) {
+      for (int g_y = min_y; g_y < max_y; g_y++) {
+        for (int g_x = min_x; g_x < max_x; g_x++) {
+            // std::cout << entryX[g_y*grid_x + g_x] << "\t";
+        }
+        // std::cout << std::endl;
+      }
+
+      for (int g_y = min_y; g_y < max_y; g_y++) {
+        for (int g_x = min_x; g_x < max_x; g_x++) {
+            // std::cout << entryY[g_y*grid_x + g_x] << "\t";
+        }
+        // std::cout << std::endl;
+      }
+
   }
 }
 
@@ -372,13 +433,20 @@ void DataTransformer::GenerateLabelMap(double* transformed_label, Mat& img_aug, 
     int mid_2[19] = {9, 10, 11, 12, 13, 14, 3, 4, 5, 17, 6, 7, 8, 18, 1, 15, 16, 17, 18};
     int thre = 1;
 
+    // std::cout << "\n\n\n\ncreating pafs " << meta.write_number << std::endl;
+
     // add vector maps for all limbs
     for (int i=0; i<19; i++) {
       Mat count = Mat::zeros(grid_y, grid_x, CV_8UC1);
       Joints jo = meta.joint_self;
       if (jo.is_visible[mid_1[i]-1] <= 1 && jo.is_visible[mid_2[i]-1] <= 1) {
         PutVecMaps(transformed_label + (np+ 1+ 2*i)*channelOffset, transformed_label + (np+ 2+ 2*i)*channelOffset,
-                   count, jo.joints[mid_1[i]-1], jo.joints[mid_2[i]-1], param_.stride, grid_x, grid_y, param_.sigma, thre); //self
+                   count, jo.joints[mid_1[i]-1], jo.joints[mid_2[i]-1], param_.stride, grid_x, grid_y, param_.sigma, thre, i==7); //self
+
+        // std::cout << i << " " << mid_1[i]-1 << " " << mid_2[i]-1 <<std::endl;
+        // std::cout << jo.joints[mid_1[i]-1] << std::endl;
+        // std::cout << jo.joints[mid_2[i]-1] << std::endl;
+
       }
 
       for (int j = 0; j < meta.num_other_people; j++) { //for every other person
@@ -568,7 +636,7 @@ void DataTransformer::Transform(const uchar *data, const int datum_channels, con
       dindex = 4*offset + i*img.cols + j;
       d_element = data[dindex];
       if (round(d_element/255)!=1 && round(d_element/255)!=0){
-        cout << d_element << " " << round(d_element/255) << endl;
+        // cout << d_element << " " << round(d_element/255) << endl;
       }
       mask_miss.at<uchar>(i, j) = d_element; //round(d_element/255);
     }
@@ -597,10 +665,12 @@ void DataTransformer::Transform(const uchar *data, const int datum_channels, con
   Mat mask_miss_aug;
   Mat img_temp, img_temp2, img_temp3; //size determined by scale
 
-  as.scale = AugmentationScale(img, img_temp, mask_miss, meta);
-  as.degree = AugmentationRotate(img_temp, img_temp2, mask_miss, meta);
-  as.crop = AugmentationCroppad(img_temp2, img_temp3, mask_miss, mask_miss_aug, meta);
-  as.flip = AugmentationFlip(img_temp3, img_aug, mask_miss_aug, meta);
+  bool unrandom = true;
+
+  as.scale = AugmentationScale(img, img_temp, mask_miss, meta, unrandom);
+  as.degree = AugmentationRotate(img_temp, img_temp2, mask_miss, meta, unrandom);
+  as.crop = AugmentationCroppad(img_temp2, img_temp3, mask_miss, mask_miss_aug, meta, unrandom);
+  as.flip = AugmentationFlip(img_temp3, img_aug, mask_miss_aug, meta, unrandom);
 
   resize(mask_miss_aug, mask_miss_aug, Size(), 1.0/stride, 1.0/stride, INTER_CUBIC);
 
@@ -628,6 +698,8 @@ void DataTransformer::Transform(const uchar *data, const int datum_channels, con
     for (int g_x = 0; g_x < grid_x; g_x++) {
       for (int i = 0; i < np; i++){
         float weight = float(mask_miss_aug.at<uchar>(g_y, g_x)) /255; //mask_miss_aug.at<uchar>(i, j);
+
+        // TODO: очень странное место, получается маски могут быть разными в зависимости от видимости частей тела главной персоны.
         if (meta.joint_self.is_visible[i] != 3){
           transformed_label[i*channel_offset + g_y*grid_x + g_x] = weight;
         }
